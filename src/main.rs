@@ -35,7 +35,6 @@ async fn test() {
     let write_finish_notify_cloned = write_finish_notify.clone();
 
     let flush_finish_notify_cloned = flush_finish_notify.clone();
-
     let data_written_ofs_1 = data_written_offset.clone();
     let data_flush_offset_1 = data_flush_offset.clone();
     let file_cloned = file.try_clone().await.unwrap();
