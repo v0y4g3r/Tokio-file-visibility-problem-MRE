@@ -14,7 +14,7 @@ async fn test() {
     let dir_str = dir.path().to_string_lossy().to_string();
     println!("dir: {}", dir_str);
 
-    let data = "/home/lei/Workspace/greptimedb/target/debug/deps/log_store-224a87479e045fe6fresh:false}";
+    let data = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.";
     let data_len = data.len();
     let mut file = tokio::fs::OpenOptions::new()
         .write(true)
