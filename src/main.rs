@@ -1,6 +1,5 @@
-use memmap2::MmapOptions;
 use tempdir::TempDir;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Release};
@@ -8,11 +7,11 @@ use std::sync::atomic::Ordering::{Acquire, Release};
 /// There are 3 async tasks cooperating with each other.
 /// - Write task writes data to file, update write_offset and notify flush task
 /// - Flush task waits for write finishes, load write_offset, flush file and update flush_offset to write_offset
-/// - Mmap task waits for flush finishes, load flush_offset as the persisted file length, mmap the file region [0, flush_offset) and checks if data read matches data written.
+/// - Read task waits for flush finishes, load flush_offset as the persisted file length, read the file region [0, flush_offset) and checks if data read matches data written.
 async fn test() {
     let dir = TempDir::new("file-test").unwrap();
-    let dir_str = dir.path().to_string_lossy().to_string();
-    println!("dir: {}", dir_str);
+    let file_path = dir.path().join("data").to_string_lossy().to_string();
+    println!("file: {}", file_path);
 
     let data = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.";
     let data_len = data.len();
@@ -20,7 +19,7 @@ async fn test() {
         .write(true)
         .read(true)
         .create(true)
-        .open(dir.path().join("data"))
+        .open(&file_path)
         .await
         .unwrap();
 
@@ -50,20 +49,15 @@ async fn test() {
     // start mmap read task
     let flush_notify_cloned2 = flush_finish_notify.clone();
     let flush_offset_2 = data_flush_offset.clone();
-    let file_cloned_2 = file.try_clone().await.unwrap();
     let handle = tokio::spawn(async move {
         flush_notify_cloned2.notified().await;
         let flush_offset = flush_offset_2.load(Acquire);
-        println!("mmap:{}", flush_offset);
-        let mmap = unsafe {
-            MmapOptions::new()
-                .offset(0)
-                .len(flush_offset)
-                .populate()
-                .map(&file_cloned_2)
-                .unwrap()
-        };
-        assert_eq!(data.as_bytes(), &mmap[0..data_len]);
+        let mut file = tokio::fs::File::open(file_path).await.unwrap();
+        // checks if file length in metadata matches flush offset.
+        assert_eq!(flush_offset as u64, file.metadata().await.unwrap().len());
+        let mut content = String::new();
+        file.read_to_string(&mut content).await.unwrap();
+        assert_eq!(data, &content);
     });
 
     // write data to file and notify flush thread.
