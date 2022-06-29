@@ -1,8 +1,7 @@
 use tempdir::TempDir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering::{Acquire, Release};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// There are 3 async tasks cooperating with each other.
 /// - Write task writes data to file, update write_offset and notify flush task
@@ -39,19 +38,19 @@ async fn test() {
     let file_cloned = file.try_clone().await.unwrap();
     tokio::spawn(async move {
         write_finish_notify_cloned.notified().await;
-        let written_offset = data_written_ofs_1.load(Acquire);
+        let written_offset = data_written_ofs_1.load(Ordering::SeqCst);
         file_cloned.sync_all().await.unwrap();
-        data_flush_offset_1.store(written_offset, Release);
+        data_flush_offset_1.store(written_offset, Ordering::SeqCst);
         println!("flush: {}", written_offset);
         flush_finish_notify_cloned.notify_one();
     });
 
-    // start mmap read task
+    // start read task
     let flush_notify_cloned2 = flush_finish_notify.clone();
     let flush_offset_2 = data_flush_offset.clone();
     let handle = tokio::spawn(async move {
         flush_notify_cloned2.notified().await;
-        let flush_offset = flush_offset_2.load(Acquire);
+        let flush_offset = flush_offset_2.load(Ordering::SeqCst);
         let mut file = tokio::fs::File::open(file_path).await.unwrap();
         // checks if file length in metadata matches flush offset.
         assert_eq!(flush_offset as u64, file.metadata().await.unwrap().len());
@@ -62,7 +61,7 @@ async fn test() {
 
     // write data to file and notify flush thread.
     file.write_all(data.as_bytes()).await.unwrap();
-    data_written_offset.store(data_len, Release); // update written offset
+    data_written_offset.store(data_len, Ordering::SeqCst); // update written offset
     println!("write finish: {}", data_len);
     write_finish_notify.notify_one();
 
