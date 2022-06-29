@@ -1,7 +1,6 @@
 use memmap2::MmapOptions;
 use tempdir::TempDir;
 use tokio::io::AsyncWriteExt;
-use tokio::spawn;
 use std::sync::Arc;
 
 async fn test() {
@@ -19,18 +18,26 @@ async fn test() {
         .await
         .unwrap();
 
-    file.write_all(data.as_bytes()).await.unwrap();
+
 
     let file_cloned = file.try_clone().await.unwrap();
-    let notify = Arc::new(tokio::sync::Notify::new());
+    let flush_finish_notify = Arc::new(tokio::sync::Notify::new());
+    let write_finish_notify = Arc::new(tokio::sync::Notify::new());
+    let write_finish_notify_cloned = write_finish_notify.clone();
 
-    let notify_cloned = notify.clone();
+    let flush_finish_notify_cloned = flush_finish_notify.clone();
+
     tokio::spawn(async move {
+        write_finish_notify_cloned.notified().await;
         file_cloned.sync_all().await.unwrap();
-        notify_cloned.notify_one();
+        println!("flush");
+        flush_finish_notify_cloned.notify_one();
     });
 
-    notify.notified().await;
+    file.write_all(data.as_bytes()).await.unwrap();
+    println!("write");
+    write_finish_notify.notify_one();
+    flush_finish_notify.notified().await;
 
     let mmap = unsafe {
         MmapOptions::new()
