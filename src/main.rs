@@ -1,5 +1,6 @@
+use std::io::SeekFrom;
 use tempdir::TempDir;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -33,29 +34,30 @@ async fn test() {
     let write_finish_notify_cloned = write_finish_notify.clone();
 
     let flush_finish_notify_cloned = flush_finish_notify.clone();
-    let data_written_ofs_1 = data_written_offset.clone();
-    let data_flush_offset_1 = data_flush_offset.clone();
+    let write_offset_cloned = data_written_offset.clone();
+    let flush_offset_cloned = data_flush_offset.clone();
     let file_cloned = file.try_clone().await.unwrap();
     tokio::spawn(async move {
         write_finish_notify_cloned.notified().await;
-        let written_offset = data_written_ofs_1.load(Ordering::SeqCst);
+        let written_offset = write_offset_cloned.load(Ordering::SeqCst);
         file_cloned.sync_all().await.unwrap();
-        data_flush_offset_1.store(written_offset, Ordering::SeqCst);
+        flush_offset_cloned.store(written_offset, Ordering::SeqCst);
         println!("flush: {}", written_offset);
         flush_finish_notify_cloned.notify_one();
     });
 
     // start read task
-    let flush_notify_cloned2 = flush_finish_notify.clone();
-    let flush_offset_2 = data_flush_offset.clone();
+    let flush_notify_cloned = flush_finish_notify.clone();
+    let flush_offset_cloned = data_flush_offset.clone();
+    let mut file_cloned = file.try_clone().await.unwrap();
     let handle = tokio::spawn(async move {
-        flush_notify_cloned2.notified().await;
-        let flush_offset = flush_offset_2.load(Ordering::SeqCst);
-        let mut file = tokio::fs::File::open(file_path).await.unwrap();
+        flush_notify_cloned.notified().await;
+        let flush_offset = flush_offset_cloned.load(Ordering::SeqCst);
         // checks if file length in metadata matches flush offset.
-        assert_eq!(flush_offset as u64, file.metadata().await.unwrap().len());
+        assert_eq!(flush_offset as u64, file_cloned.metadata().await.unwrap().len());
         let mut content = String::new();
-        file.read_to_string(&mut content).await.unwrap();
+        file_cloned.seek(SeekFrom::Start(0)).await.unwrap();
+        file_cloned.read_to_string(&mut content).await.unwrap();
         assert_eq!(data, &content);
     });
 
