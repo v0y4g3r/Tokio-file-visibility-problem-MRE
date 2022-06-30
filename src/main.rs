@@ -28,47 +28,25 @@ async fn test() {
     // data offset flushed.
     let data_flush_offset = Arc::new(AtomicUsize::new(0));
 
-    // condition variables
-    let flush_finish_notify = Arc::new(tokio::sync::Notify::new());
-    let write_finish_notify = Arc::new(tokio::sync::Notify::new());
-    let write_finish_notify_cloned = write_finish_notify.clone();
-
-    let flush_finish_notify_cloned = flush_finish_notify.clone();
-    let write_offset_cloned = data_written_offset.clone();
-    let flush_offset_cloned = data_flush_offset.clone();
-    let file_cloned = file.try_clone().await.unwrap();
-    tokio::spawn(async move {
-        write_finish_notify_cloned.notified().await;
-        let written_offset = write_offset_cloned.load(Ordering::SeqCst);
-        file_cloned.sync_all().await.unwrap();
-        flush_offset_cloned.store(written_offset, Ordering::SeqCst);
-        println!("flush: {}", written_offset);
-        flush_finish_notify_cloned.notify_one();
-    });
-
-    // start read task
-    let flush_notify_cloned = flush_finish_notify.clone();
-    let flush_offset_cloned = data_flush_offset.clone();
-    let mut file_cloned = file.try_clone().await.unwrap();
-    let handle = tokio::spawn(async move {
-        flush_notify_cloned.notified().await;
-        let flush_offset = flush_offset_cloned.load(Ordering::SeqCst);
-        // checks if file length in metadata matches flush offset.
-        assert_eq!(flush_offset as u64, file_cloned.metadata().await.unwrap().len());
-        let mut content = String::new();
-        file_cloned.seek(SeekFrom::Start(0)).await.unwrap();
-        file_cloned.read_to_string(&mut content).await.unwrap();
-        assert_eq!(data, &content);
-    });
-
     // write data to file and notify flush thread.
     file.write_all(data.as_bytes()).await.unwrap();
     data_written_offset.store(data_len, Ordering::SeqCst); // update written offset
     println!("write finish: {}", data_len);
-    write_finish_notify.notify_one();
 
-    // wait mmap finish.
-    handle.await.unwrap();
+    let written_offset = data_written_offset.clone().load(Ordering::SeqCst);
+    file.try_clone().await.unwrap().sync_all().await.unwrap();
+    data_flush_offset.clone().store(written_offset, Ordering::SeqCst);
+    println!("flush: {}", written_offset);
+
+    let flush_offset_cloned = data_flush_offset.clone();
+    let mut file_cloned = file.try_clone().await.unwrap();
+    let flush_offset = flush_offset_cloned.load(Ordering::SeqCst);
+    // checks if file length in metadata matches flush offset.
+    assert_eq!(flush_offset as u64, file_cloned.metadata().await.unwrap().len());
+    let mut content = String::new();
+    file_cloned.seek(SeekFrom::Start(0)).await.unwrap();
+    file_cloned.read_to_string(&mut content).await.unwrap();
+    assert_eq!(data, &content);
 }
 
 #[tokio::main]
