@@ -3,6 +3,11 @@
 This is a minimal reproducible example(MRE) that demonstrates a file visibility issue
 in [tokio-fs](https://docs.rs/tokio/0.1.22/tokio/fs/index.html)
 
+## UPDATE
+
+The problem is already solved, please check **Root cause** section in this page.
+
+
 ## What does this program do
 
 In `src/main.rs`, 3 async tasks cooperate with each other, synchronized by `tokio::sync::Notify`.
@@ -68,4 +73,8 @@ nightly-x86_64-unknown-linux-gnu (default)
 rustc 1.64.0-nightly (830880640 2022-06-28)
 ```
 
-But interestingly, this problem could not yet be reproduced in ARM platforms, including Raspberry Pi and Macbook Pro M1.
+# Root cause
+
+`tokio::fs::File` internally maintains a [state](https://github.com/tokio-rs/tokio/blob/master/tokio/src/fs/file.rs#L639) which contains a buffer. When invoking `tokio::fs::File::write_all` and wait for future complete, the data is guaranteed to be copied to the inner state of current File instance. But if `File` is cloned via `try_clone`, this state is not shared with the cloned File instance. So data written to previous File instance is not guaranteed to be flushed to disk even if you call `sync_data` on the duplicated File instance.
+
+Switch to `std::fs::File` does solve the problem since `std::fs::File` is nothing but a wrapper of libc syscalls.
