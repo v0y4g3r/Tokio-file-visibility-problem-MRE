@@ -67,7 +67,6 @@ async fn test() {
     println!("write finish: {}", data_len);
     write_finish_notify.notify_one();
 
-    // wait mmap finish.
     handle.await.unwrap();
 }
 
