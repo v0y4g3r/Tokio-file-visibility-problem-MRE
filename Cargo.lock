@@ -27,9 +27,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "coredump"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4079960e8d47c5f7f6b36b61b2a462ad85eafaf2b1748bab2f71ddd6df6a7b0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "filemap"
 version = "0.1.0"
 dependencies = [
+ "coredump",
  "tempdir",
  "tokio",
 ]

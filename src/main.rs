@@ -72,5 +72,6 @@ async fn test() {
 
 #[tokio::main]
 async fn main() {
+    coredump::register_panic_handler().unwrap();
     test().await;
 }
